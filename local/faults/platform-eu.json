@@ -1,0 +1,6 @@
+{
+  "default": { "error_rate": 0.1, "latency_ms": 150 },
+  "binders": {
+    "10000000-0000-4000-8000-000000000002": { "error_rate": 0.5, "forced_status": 429 }
+  }
+}

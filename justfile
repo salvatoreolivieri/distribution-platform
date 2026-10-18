@@ -7,13 +7,31 @@ default:
 
 # Regenerate all code derived from contracts/ (CI fails if the result differs from git)
 gen:
-    cd services/backend && go generate ./...
+    cd services/backend && sqlc generate && go generate ./...
     cd web && npm run -s gen
     cd services/task-worker && uv run --frozen datamodel-codegen \
         --input ../../contracts/events/task-message.schema.json --input-file-type jsonschema \
         --output src/task_worker/contracts/task_message.py \
         --output-model-type pydantic_v2.BaseModel --target-python-version 3.13 \
         --use-standard-collections --disable-timestamp --formatters builtin
+
+# Start the whole local stack, apply migrations and load the seed
+up:
+    docker compose up -d --build --wait
+    just seed
+    @echo "auth :8080  api :8090  platform eu :8081 us :8082  (see local/README.md)"
+
+# Stop the local stack (add `-v` to drop the database volume)
+down *args:
+    docker compose down {{args}}
+
+# Load db/seed into the local database (idempotent)
+seed:
+    docker compose exec -T postgres psql -U migrator -d docbridge -v ON_ERROR_STOP=1 -q < db/seed/seed.sql
+
+# Apply pending migrations to the local database
+migrate:
+    docker compose run --rm migrate --wait up
 
 # Build the web app and every Lambda artifact into dist/
 build:

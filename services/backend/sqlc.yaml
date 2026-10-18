@@ -1,0 +1,29 @@
+version: "2"
+sql:
+  - engine: postgresql
+    schema: ../../db/migrations
+    queries: internal/store/auth/queries.sql
+    gen:
+      go:
+        package: auth
+        out: internal/store/auth
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true
+  - engine: postgresql
+    schema: ../../db/migrations
+    queries: internal/store/platform/queries.sql
+    gen:
+      go:
+        package: platform
+        out: internal/store/platform
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true
+  - engine: postgresql
+    schema: ../../db/migrations
+    queries: internal/store/docbridge/queries.sql
+    gen:
+      go:
+        package: docbridge
+        out: internal/store/docbridge
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true

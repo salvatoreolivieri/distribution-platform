@@ -34,12 +34,24 @@ Requirements: Go, Node 22+, [uv](https://docs.astral.sh/uv/), [just](https://jus
 Docker, Terraform 1.10+, dbmate.
 
 ```bash
-just gen     # regenerate code from contracts/
+just up      # Postgres, LocalStack, auth, api, platform eu + us; migrations and seed
+just gen     # regenerate code from contracts/ and db/migrations/
 just lint
 just test
 just build   # web app + dist/*.zip Lambda artifacts
 just tf-check
 ```
+
+The local stack is described in [local/README.md](local/README.md). `just down -v` removes it
+with its data.
+
+## Database
+
+`db/migrations/` are plain SQL applied with dbmate. `000_roles.sql` creates one role per
+service and one schema per owner (`auth`, `platform`, `docbridge`); each later migration
+grants only what its owner and the explicit readers need. `scripts/db-role-passwords.sh`
+turns on login for the roles. Go queries are generated with sqlc into
+`services/backend/internal/store/{auth,platform,docbridge}`.
 
 ## Infrastructure
 

@@ -1,0 +1,118 @@
+# Local stack: `just up`. See local/README.md.
+
+x-aws: &aws
+  AWS_REGION: eu-west-1
+  AWS_ACCESS_KEY_ID: test
+  AWS_SECRET_ACCESS_KEY: test
+  AWS_ENDPOINT_URL: http://localstack:4566
+
+x-jwt: &jwt
+  JWKS_URL: http://auth:8080/.well-known/jwks.json
+  JWT_ISSUER: http://localhost:8080
+  JWT_AUDIENCE: docbridge
+
+x-go: &go
+  build:
+    context: services/backend
+  restart: unless-stopped
+  depends_on:
+    db-roles:
+      condition: service_completed_successfully
+    localstack:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: migrator
+      POSTGRES_PASSWORD: migrator
+      POSTGRES_DB: docbridge
+    ports: ["${POSTGRES_PORT:-5440}:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U migrator -d docbridge"]
+      interval: 2s
+      retries: 30
+
+  localstack:
+    image: localstack/localstack:4.4
+    environment:
+      SERVICES: s3,sqs,kms
+      AWS_DEFAULT_REGION: eu-west-1
+    ports: ["4566:4566"]
+    volumes:
+      - ./local/localstack/init.sh:/etc/localstack/init/ready.d/init.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs localhost:4566/_localstack/init/ready | grep -q '\"completed\": true'"]
+      interval: 3s
+      retries: 40
+
+  migrate:
+    image: ghcr.io/amacneil/dbmate:2
+    command: ["--wait", "up"]
+    environment:
+      DATABASE_URL: postgres://migrator:migrator@postgres:5432/docbridge?sslmode=disable
+      DBMATE_MIGRATIONS_DIR: /db/migrations
+      DBMATE_NO_DUMP_SCHEMA: "true"
+    volumes: [./db:/db:ro]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  db-roles:
+    image: postgres:17-alpine
+    entrypoint: ["bash", "/scripts/db-role-passwords.sh"]
+    environment:
+      DATABASE_URL: postgres://migrator:migrator@postgres:5432/docbridge
+    volumes: [./scripts:/scripts:ro]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  auth:
+    <<: *go
+    build: { context: services/backend, args: { CMD: auth } }
+    environment:
+      <<: [*aws, *jwt]
+      JWT_KMS_KEY_ID: alias/docbridge-local-jwt
+      DATABASE_URL: postgres://auth_svc:auth_svc_local@postgres:5432/docbridge
+    ports: ["8080:8080"]
+
+  api:
+    <<: *go
+    build: { context: services/backend, args: { CMD: api } }
+    environment:
+      <<: [*aws, *jwt]
+      DATABASE_URL: postgres://docbridge_svc:docbridge_svc_local@postgres:5432/docbridge
+      STAGING_BUCKET: docbridge-local-staging
+    ports: ["8090:8080"]
+
+  platform-eu:
+    <<: *go
+    build: { context: services/backend, args: { CMD: platform } }
+    environment:
+      <<: [*aws, *jwt]
+      PLATFORM_REGION: eu
+      DATABASE_URL: postgres://platform_svc:platform_svc_local@postgres:5432/docbridge
+      DOCUMENTS_BUCKET: docbridge-local-documents
+      STAGING_BUCKET: docbridge-local-staging
+      FAULTS_FILE: /faults/platform-eu.json
+    volumes: [./local/faults:/faults:ro]
+    ports: ["8081:8080"]
+
+  platform-us:
+    <<: *go
+    build: { context: services/backend, args: { CMD: platform } }
+    environment:
+      <<: [*aws, *jwt]
+      PLATFORM_REGION: us
+      DATABASE_URL: postgres://platform_svc:platform_svc_local@postgres:5432/docbridge
+      DOCUMENTS_BUCKET: docbridge-local-documents
+      STAGING_BUCKET: docbridge-local-staging
+      FAULTS_FILE: /faults/platform-us.json
+    volumes: [./local/faults:/faults:ro]
+    ports: ["8082:8080"]
+
+volumes:
+  pgdata:

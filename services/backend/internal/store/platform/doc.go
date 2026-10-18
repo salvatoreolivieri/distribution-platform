@@ -1,3 +1,3 @@
 // Package platform holds the sqlc-generated queries for the platform schema. Only the
-// platform_svc database role may write these tables.
+// platform_svc database role may write these tables. Edit queries.sql and run `just gen`.
 package platform
