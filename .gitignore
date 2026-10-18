@@ -1,0 +1,26 @@
+# build output
+dist/
+web/dist/
+*.zip
+
+# dependencies
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+
+# local
+.env
+.env.local
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,13 @@
+{
+  "retryBudget": 5,
+  "scenarios": [
+    { "name": "worker claims a pending task", "from": { "status": "pending", "attempts": 0 }, "event": { "actor": "worker", "type": "claim" }, "expect": { "status": "in_progress", "attempts": 1 } },
+    { "name": "worker completes", "from": { "status": "in_progress", "attempts": 1 }, "event": { "actor": "worker", "type": "delivered" }, "expect": { "status": "completed", "attempts": 1 } },
+    { "name": "transient error goes back to pending", "from": { "status": "in_progress", "attempts": 1 }, "event": { "actor": "worker", "type": "transient_error" }, "expect": { "status": "pending", "attempts": 1 } },
+    { "name": "permanent error fails", "from": { "status": "in_progress", "attempts": 1 }, "event": { "actor": "worker", "type": "permanent_error", "errorCode": "PLATFORM_REJECTED" }, "expect": { "status": "failed", "errorCode": "PLATFORM_REJECTED" } },
+    { "name": "completed tasks cannot be claimed", "from": { "status": "completed", "attempts": 1 }, "event": { "actor": "worker", "type": "claim" }, "expect": { "rejected": true } },
+    { "name": "dlq handler fails the task", "from": { "status": "pending", "attempts": 5 }, "event": { "actor": "dlq_handler", "type": "retries_exhausted" }, "expect": { "status": "failed", "errorCode": "RETRIES_EXHAUSTED" } },
+    { "name": "watchdog releases an expired lease", "from": { "status": "in_progress", "attempts": 2 }, "event": { "actor": "watchdog", "type": "lease_expired" }, "expect": { "status": "pending", "attempts": 2 } },
+    { "name": "upload failure skips the task", "from": { "status": "pending", "attempts": 0 }, "event": { "actor": "user", "type": "upload_failed" }, "expect": { "status": "skipped" } }
+  ]
+}

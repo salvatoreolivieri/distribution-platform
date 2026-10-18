@@ -1,0 +1,371 @@
+openapi: 3.0.3
+info:
+  title: DocBridge API
+  version: 1.0.0
+  description: |
+    Submit files, deliver each one to several destinations on the document platform,
+    and track the jobs. Served by the Go `api` binary today; the Java modular monolith
+    implements the same contract after M5.
+servers:
+  - url: /
+security:
+  - bearerAuth: []
+paths:
+  /v1/destinations:
+    get:
+      operationId: listDestinations
+      tags: [destinations]
+      description: Binders and folders across regions, with the caller's access level per node.
+      responses:
+        '200':
+          description: Destination tree, pruned to nodes the caller can see.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DestinationTreeEnvelope'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthenticated'
+  /v1/jobs:
+    post:
+      operationId: submitJob
+      tags: [jobs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitJobRequest'
+      responses:
+        '201':
+          description: Job created; each file has an upload target.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobEnvelope'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthenticated'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '422':
+          $ref: './common.yaml#/components/responses/ValidationFailed'
+    get:
+      operationId: listJobs
+      tags: [jobs]
+      parameters:
+        - name: view
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, past]
+            default: active
+        - $ref: './common.yaml#/components/parameters/Cursor'
+        - $ref: './common.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Jobs submitted by the caller.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobPage'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthenticated'
+  /v1/jobs/{jobId}:
+    get:
+      operationId: getJob
+      tags: [jobs]
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Job with its files and tasks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobEnvelope'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthenticated'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+  /v1/jobs/{jobId}/files/{fileId}/upload-target:
+    post:
+      operationId: refreshUploadTarget
+      tags: [files]
+      description: Issues a fresh presigned upload target when the previous one expired.
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+        - $ref: '#/components/parameters/FileId'
+      responses:
+        '200':
+          description: New upload target.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadTargetEnvelope'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthenticated'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+  /v1/jobs/{jobId}/files/{fileId}/upload-failed:
+    post:
+      operationId: reportUploadFailed
+      tags: [files]
+      description: The browser gave up uploading this file; its tasks are skipped.
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+        - $ref: '#/components/parameters/FileId'
+      responses:
+        '204':
+          description: Recorded.
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthenticated'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+  /v1/files/{fileId}/download-url:
+    get:
+      operationId: getFileDownloadUrl
+      tags: [files]
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+      responses:
+        '200':
+          description: Short-lived presigned GET URL for the staged file.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadUrlEnvelope'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthenticated'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: './common.yaml#/components/securitySchemes/bearerAuth'
+  parameters:
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    FileId:
+      name: fileId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    AccessLevel:
+      type: string
+      enum: [none, read, write]
+    DestinationNode:
+      type: object
+      required: [id, name, kind, access, children]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [binder, folder]
+        region:
+          $ref: './common.yaml#/components/schemas/Region'
+        access:
+          $ref: '#/components/schemas/AccessLevel'
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/DestinationNode'
+    DestinationTreeEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DestinationNode'
+    Destination:
+      type: object
+      required: [region, binderId, folderId]
+      properties:
+        region:
+          $ref: './common.yaml#/components/schemas/Region'
+        binderId:
+          type: string
+          format: uuid
+        folderId:
+          type: string
+          format: uuid
+    SubmitFile:
+      type: object
+      required: [name, sizeBytes, checksumSha256, destinations]
+      properties:
+        name:
+          type: string
+        contentType:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        checksumSha256:
+          type: string
+          description: Base64-encoded SHA-256, computed in the browser.
+        destinations:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Destination'
+    SubmitJobRequest:
+      type: object
+      required: [files]
+      properties:
+        files:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/SubmitFile'
+    JobStatus:
+      type: string
+      enum: [uploading, processing, completed, completed_with_errors, failed]
+    FileStatus:
+      type: string
+      enum: [pending_upload, uploaded, upload_failed, expired]
+    TaskStatus:
+      type: string
+      enum: [pending, in_progress, completed, failed, skipped]
+    UploadTarget:
+      type: object
+      required: [url, fields, expiresAt]
+      description: Presigned S3 POST.
+      properties:
+        url:
+          type: string
+          format: uri
+        fields:
+          type: object
+          additionalProperties:
+            type: string
+        expiresAt:
+          type: string
+          format: date-time
+    UploadTargetEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/UploadTarget'
+    Task:
+      type: object
+      required: [id, destination, status, attempts]
+      properties:
+        id:
+          type: string
+          format: uuid
+        destination:
+          $ref: '#/components/schemas/Destination'
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        attempts:
+          type: integer
+        errorCode:
+          type: string
+          nullable: true
+        documentId:
+          type: string
+          format: uuid
+          nullable: true
+    JobFile:
+      type: object
+      required: [id, name, sizeBytes, status, tasks]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        status:
+          $ref: '#/components/schemas/FileStatus'
+        uploadTarget:
+          $ref: '#/components/schemas/UploadTarget'
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Task'
+    Job:
+      type: object
+      required: [id, status, createdAt, files]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobFile'
+    JobEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/Job'
+    JobSummary:
+      type: object
+      required: [id, status, createdAt, fileCount]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        createdAt:
+          type: string
+          format: date-time
+        fileCount:
+          type: integer
+    JobPage:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobSummary'
+        meta:
+          $ref: './common.yaml#/components/schemas/PageMeta'
+    DownloadUrl:
+      type: object
+      required: [url, expiresAt]
+      properties:
+        url:
+          type: string
+          format: uri
+        expiresAt:
+          type: string
+          format: date-time
+    DownloadUrlEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/DownloadUrl'

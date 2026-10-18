@@ -1,0 +1,1 @@
+"""DocBridge task worker."""

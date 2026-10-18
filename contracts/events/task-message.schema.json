@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/salvatoreolivieri/distribution-platform/contracts/events/task-message.schema.json",
+  "title": "TaskMessage",
+  "description": "Body of a message on the tasks queue. Sent by the upload-handler and the watchdog; consumed by the task worker. The worker loads everything else from the database.",
+  "type": "object",
+  "required": ["taskId"],
+  "additionalProperties": false,
+  "properties": {
+    "taskId": {
+      "type": "string",
+      "format": "uuid"
+    }
+  }
+}

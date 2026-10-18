@@ -1,0 +1,116 @@
+openapi: 3.0.3
+info:
+  title: Shared API components
+  version: 1.0.0
+  description: |
+    Envelope, pagination and error shapes shared by every HTTP API.
+    Success bodies are `{ "data": ..., "meta": ... }`; error bodies are `{ "error": ApiError }`.
+paths: {}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque cursor returned as `meta.pagination.nextCursor`.
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 25
+  schemas:
+    ErrorCode:
+      type: string
+      enum:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_FAILED
+        - CONFLICT
+        - RATE_LIMITED
+        - UPSTREAM_UNAVAILABLE
+        - NOT_IMPLEMENTED
+        - INTERNAL
+    ApiError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: '#/components/schemas/ApiError'
+    Pagination:
+      type: object
+      required: [limit]
+      properties:
+        limit:
+          type: integer
+        nextCursor:
+          type: string
+          nullable: true
+    PageMeta:
+      type: object
+      required: [pagination]
+      properties:
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    Region:
+      type: string
+      enum: [eu, us]
+  responses:
+    Unauthenticated:
+      description: Missing, expired or invalid token.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Forbidden:
+      description: Authenticated, but not allowed to perform this operation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    NotFound:
+      description: The resource does not exist or is not visible to the caller.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    ValidationFailed:
+      description: The request body or parameters are invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Conflict:
+      description: The request conflicts with the current state.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Internal:
+      description: Unexpected server error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'

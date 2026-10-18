@@ -1,0 +1,249 @@
+openapi: 3.0.3
+info:
+  title: Document Platform API
+  version: 1.0.0
+  description: |
+    The document platform, one deployment per region. Public routes let users browse
+    binders and read documents; /internal/v1/* is the ingest API used by the task worker
+    and requires a service token with the `documents:ingest` scope.
+servers:
+  - url: /
+security:
+  - bearerAuth: []
+paths:
+  /v1/binders:
+    get:
+      operationId: listBinders
+      tags: [browse]
+      parameters:
+        - $ref: './common.yaml#/components/parameters/Cursor'
+        - $ref: './common.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Binders visible to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BinderPage'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthenticated'
+  /v1/binders/{binderId}/tree:
+    get:
+      operationId: getBinderTree
+      tags: [browse]
+      parameters:
+        - $ref: '#/components/parameters/BinderId'
+      responses:
+        '200':
+          description: Folder tree of the binder, pruned to what the caller can see.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderTreeEnvelope'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthenticated'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+  /v1/documents/{documentId}:
+    get:
+      operationId: getDocument
+      tags: [documents]
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: Document metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentEnvelope'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthenticated'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+  /v1/documents/{documentId}/download:
+    get:
+      operationId: getDocumentDownload
+      tags: [documents]
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: Short-lived presigned GET URL.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadUrlEnvelope'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthenticated'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+  /internal/v1/binders/{binderId}/documents:
+    post:
+      operationId: ingestDocument
+      tags: [ingest]
+      description: |
+        Copies the object at `stagingKey` into the documents bucket and creates the document.
+        Idempotent on `idempotencyKey`: a repeated call returns the document created first.
+        Requires the `documents:ingest` scope.
+      parameters:
+        - $ref: '#/components/parameters/BinderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestRequest'
+      responses:
+        '201':
+          description: Document created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentEnvelope'
+        '200':
+          description: Same idempotency key seen before; the existing document is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentEnvelope'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthenticated'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+        '422':
+          $ref: './common.yaml#/components/responses/ValidationFailed'
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: './common.yaml#/components/securitySchemes/bearerAuth'
+  parameters:
+    BinderId:
+      name: binderId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    DocumentId:
+      name: documentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    Binder:
+      type: object
+      required: [id, name, region]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        region:
+          $ref: './common.yaml#/components/schemas/Region'
+    BinderPage:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Binder'
+        meta:
+          $ref: './common.yaml#/components/schemas/PageMeta'
+    FolderNode:
+      type: object
+      required: [id, name, children]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/FolderNode'
+    FolderTreeEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/FolderNode'
+    Document:
+      type: object
+      required: [id, binderId, folderId, name, sizeBytes, checksumSha256, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        binderId:
+          type: string
+          format: uuid
+        folderId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        contentType:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        checksumSha256:
+          type: string
+          description: Base64-encoded SHA-256 of the content.
+        createdAt:
+          type: string
+          format: date-time
+    DocumentEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/Document'
+    DownloadUrl:
+      type: object
+      required: [url, expiresAt]
+      properties:
+        url:
+          type: string
+          format: uri
+        expiresAt:
+          type: string
+          format: date-time
+    DownloadUrlEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/DownloadUrl'
+    IngestRequest:
+      type: object
+      required: [folderId, name, stagingKey, sizeBytes, checksumSha256, idempotencyKey]
+      properties:
+        folderId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        contentType:
+          type: string
+        stagingKey:
+          type: string
+          description: Object key in the staging bucket.
+        sizeBytes:
+          type: integer
+          format: int64
+        checksumSha256:
+          type: string
+        idempotencyKey:
+          type: string
+          description: The DocBridge task id.
