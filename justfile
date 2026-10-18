@@ -32,3 +32,15 @@ lint:
     cd services/task-worker && uv run --frozen ruff check . && uv run --frozen ruff format --check . \
         && uv run --frozen pyright && uv run --frozen lint-imports
     cd web && npm run -s lint
+
+# Format and validate every Terraform root
+tf-check:
+    terraform fmt -check -recursive infra
+    for d in infra/bootstrap infra/envs/dev infra/envs/prod; do \
+        terraform -chdir=$d init -backend=false -input=false >/dev/null && terraform -chdir=$d validate; \
+    done
+
+# Plan an environment (needs AWS credentials and `just build` artifacts): just tf-plan dev
+tf-plan env="dev":
+    terraform -chdir=infra/envs/{{env}} init -input=false
+    terraform -chdir=infra/envs/{{env}} plan -input=false -out=tfplan

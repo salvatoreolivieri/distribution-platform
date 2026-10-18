@@ -38,7 +38,16 @@ just gen     # regenerate code from contracts/
 just lint
 just test
 just build   # web app + dist/*.zip Lambda artifacts
+just tf-check
 ```
+
+## Infrastructure
+
+`infra/bootstrap` is applied once by hand (state bucket and the GitHub OIDC deploy role).
+`infra/envs/dev` composes the modules; `infra/envs/prod` links to the same files and differs
+only in `terraform.tfvars` and `backend.tf`. Lambdas are deployed from the `dist/*.zip` files
+that `just build` produces. Moving an API route group to another backend is one entry in
+`route_backends`.
 
 ## Rules that hold the structure together
 
