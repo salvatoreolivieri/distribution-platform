@@ -1,0 +1,31 @@
+name: task-worker
+
+on:
+  pull_request:
+    paths: ["services/task-worker/**", "db/**", "contracts/events/**", ".github/workflows/task-worker.yml"]
+  push:
+    branches: [main]
+    paths: ["services/task-worker/**", "db/**", "contracts/events/**", ".github/workflows/task-worker.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/task-worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: services/task-worker/uv.lock
+      - run: uv sync --frozen
+      - run: uv run --frozen ruff check .
+      - run: uv run --frozen ruff format --check .
+      - run: uv run --frozen pyright
+      - name: Layer boundaries (import-linter)
+        run: uv run --frozen lint-imports
+      - run: uv run --frozen pytest

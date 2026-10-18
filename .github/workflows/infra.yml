@@ -1,0 +1,86 @@
+name: infra
+
+on:
+  pull_request:
+    paths: ["infra/**", ".terraform-version", ".github/workflows/infra.yml"]
+
+permissions:
+  contents: read
+  id-token: write       # AWS OIDC for the plan
+  pull-requests: write  # plan comment
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.16.6
+      - run: terraform fmt -check -recursive infra
+      - name: validate
+        run: |
+          for d in infra/bootstrap infra/envs/dev infra/envs/prod; do
+            terraform -chdir=$d init -backend=false -input=false >/dev/null
+            terraform -chdir=$d validate
+          done
+      - uses: terraform-linters/setup-tflint@v4
+      - name: tflint
+        working-directory: infra
+        run: |
+          tflint --init
+          tflint --recursive --config "$PWD/.tflint.hcl"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: infra
+          config_file: infra/.checkov.yaml
+          quiet: true
+
+  # Runs once the AWS account is bootstrapped and the AWS_DEPLOY_ROLE_ARN variable is set.
+  plan:
+    needs: static
+    if: vars.AWS_DEPLOY_ROLE_ARN != '' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/backend/go.mod
+          cache-dependency-path: services/backend/go.sum
+      - uses: astral-sh/setup-uv@v6
+      - name: Build Lambda artifacts
+        run: ./scripts/build-lambdas.sh
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: eu-west-1
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.16.6
+          terraform_wrapper: false
+      - name: plan dev
+        id: plan
+        working-directory: infra/envs/dev
+        run: |
+          terraform init -input=false
+          terraform plan -input=false -no-color -lock=false -out=tfplan
+          terraform show -no-color tfplan > plan.txt
+      - name: Comment the plan
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let plan = fs.readFileSync('infra/envs/dev/plan.txt', 'utf8');
+            if (plan.length > 60000) plan = plan.slice(0, 60000) + '\n... (truncated)';
+            const marker = '<!-- terraform-plan-dev -->';
+            const body = `${marker}\n### Terraform plan: dev\n\n<details><summary>Show plan</summary>\n\n\`\`\`\n${plan}\n\`\`\`\n</details>`;
+            const { data: comments } = await github.rest.issues.listComments({ ...context.repo, issue_number: context.issue.number });
+            const existing = comments.find(c => c.body.startsWith(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body });
+            }

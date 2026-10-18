@@ -1,0 +1,29 @@
+# Checks skipped on purpose. Each line says why; revisit before prod traffic.
+framework: [terraform]
+skip-check:
+  # By design
+  - CKV_AWS_309   # Auth routes (login, token, JWKS) and WebSocket $connect authenticate in the Lambda, not the authorizer
+  - CKV_AWS_116   # SQS-triggered Lambdas use the queues' redrive DLQs; API-triggered ones are synchronous
+  - CKV_AWS_21    # Staging objects are transient (purged after 30 days); versioning would keep deleted uploads
+  - CKV2_AWS_62   # Only the staging bucket needs event notifications
+  - CKV2_AWS_61   # Documents and state are kept indefinitely; staging has its lifecycle
+  - CKV2_AWS_5    # False positive: security groups are attached through module inputs
+  - CKV2_AWS_51   # Public browser API; callers authenticate with JWTs, not client certificates
+  - CKV_AWS_173   # No secrets in Lambda environment variables; secrets are read from Secrets Manager
+  - CKV_AWS_274   # Bootstrap deploy role is admin in the sandbox account; see the comment in bootstrap/main.tf
+  # Per-environment values: dev off, prod on (see envs/*/terraform.tfvars)
+  - CKV_AWS_157   # RDS Multi-AZ
+  - CKV_AWS_293   # RDS deletion protection
+  - CKV_AWS_338   # One-year log retention
+  # Later milestones
+  - CKV2_AWS_57   # Secret rotation: role passwords rotate together with the RDS Proxy auth
+  - CKV_AWS_149   # Secrets encrypted with the AWS-managed key for now
+  - CKV2_AWS_64   # KMS keys use the default key policy (account root) for now
+  - CKV_AWS_158   # Log groups encrypted with the service key for now
+  - CKV_AWS_354   # Performance Insights encrypted with the AWS-managed key
+  - CKV_AWS_297   # EventBridge Scheduler encrypted with the AWS-owned key
+  - CKV_AWS_118   # RDS enhanced monitoring
+  - CKV_AWS_18    # S3 access logging (CloudTrail data events planned instead)
+  - CKV_AWS_144   # Cross-region replication
+  - CKV_AWS_272   # Lambda code signing
+  - CKV_AWS_394   # AZ list comes from the first two available zones of the region

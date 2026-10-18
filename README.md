@@ -61,6 +61,27 @@ only in `terraform.tfvars` and `backend.tf`. Lambdas are deployed from the `dist
 that `just build` produces. Moving an API route group to another backend is one entry in
 `route_backends`.
 
+## CI/CD
+
+One workflow per area, each triggered only by its paths:
+
+| Workflow | Runs |
+|---|---|
+| `web` | typecheck, unit tests, build |
+| `backend` | gofmt, vet, tests, Lambda builds; **grants**: migrations up/down/up, seed, and the ownership test (every role's write against a table it does not own must fail) |
+| `task-worker` | ruff, pyright, import-linter layer contracts, pytest |
+| `contracts` | `just gen`, then fails if generated code differs from what is committed |
+| `infra` (PR) | fmt, validate, tflint, checkov; plan for dev posted as a PR comment |
+| `deploy-dev` (merge to main) | builds the Lambda artifacts and applies `infra/envs/dev` |
+
+`infra` plan and `deploy-dev` run once AWS is bootstrapped:
+
+1. `terraform -chdir=infra/bootstrap apply -var state_bucket_name=docbridge-terraform-state`
+   (the bucket name must match `infra/envs/*/backend.tf`).
+2. Set the repository variable `AWS_DEPLOY_ROLE_ARN` to the `github_deploy_role_arn` output.
+
+Until then those jobs are skipped and every other pipeline still runs.
+
 ## Rules that hold the structure together
 
 1. **Contracts first.** `contracts/openapi/`, `contracts/events/` and `db/migrations/` are the

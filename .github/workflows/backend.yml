@@ -1,0 +1,77 @@
+name: backend
+
+on:
+  pull_request:
+    paths: ["services/backend/**", "db/**", "contracts/**", "scripts/**", ".github/workflows/backend.yml"]
+  push:
+    branches: [main]
+    paths: ["services/backend/**", "db/**", "contracts/**", "scripts/**", ".github/workflows/backend.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/backend/go.mod
+          cache-dependency-path: services/backend/go.sum
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - run: go vet ./...
+      - run: go test -race ./...
+      - name: Build every binary for Lambda
+        run: |
+          for cmd in cmd/*/; do
+            GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags lambda.norpc -o /dev/null "./$cmd"
+          done
+
+  # Every role's write against a table it doesn't own must fail.
+  grants:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: migrator
+          POSTGRES_PASSWORD: migrator
+          POSTGRES_DB: docbridge
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U migrator -d docbridge"
+          --health-interval 2s --health-retries 30
+    env:
+      DATABASE_URL: postgres://migrator:migrator@localhost:5432/docbridge?sslmode=disable
+      TEST_DB_HOST: localhost:5432
+      DBMATE_VERSION: v2.37.0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/backend/go.mod
+          cache-dependency-path: services/backend/go.sum
+      - name: Install dbmate
+        run: |
+          sudo curl -fsSL -o /usr/local/bin/dbmate \
+            "https://github.com/amacneil/dbmate/releases/download/${DBMATE_VERSION}/dbmate-linux-amd64"
+          sudo chmod +x /usr/local/bin/dbmate
+      - name: Migrate
+        run: dbmate --migrations-dir db/migrations --no-dump-schema up
+      - name: Enable role logins
+        run: ./scripts/db-role-passwords.sh
+      - name: Migrations roll back cleanly
+        run: |
+          for _ in db/migrations/*.sql; do dbmate --migrations-dir db/migrations --no-dump-schema down; done
+          dbmate --migrations-dir db/migrations --no-dump-schema up
+          ./scripts/db-role-passwords.sh
+      - name: Seed loads
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f db/seed/seed.sql
+      - name: Grants test
+        working-directory: services/backend
+        run: go test -tags integration -count=1 -v ./internal/store/

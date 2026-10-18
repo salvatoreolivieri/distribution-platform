@@ -1,0 +1,45 @@
+name: deploy-dev
+
+# On merge to main: build every Lambda artifact and apply the dev environment.
+# Skipped until the AWS account is bootstrapped (infra/bootstrap) and the AWS_DEPLOY_ROLE_ARN
+# repository variable is set.
+on:
+  push:
+    branches: [main]
+    paths: ["infra/**", "services/**", ".terraform-version", "scripts/build-lambdas.sh", ".github/workflows/deploy-dev.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: vars.AWS_DEPLOY_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/backend/go.mod
+          cache-dependency-path: services/backend/go.sum
+      - uses: astral-sh/setup-uv@v6
+      - name: Build Lambda artifacts
+        run: ./scripts/build-lambdas.sh
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: eu-west-1
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.16.6
+      - name: apply dev
+        working-directory: infra/envs/dev
+        run: |
+          terraform init -input=false
+          terraform apply -input=false -auto-approve

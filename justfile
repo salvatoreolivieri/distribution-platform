@@ -44,6 +44,10 @@ test:
     cd services/task-worker && uv run --frozen pytest
     cd web && npm test
 
+# Integration tests against the local stack (`just up` first): the grants test
+test-integration:
+    cd services/backend && go test -tags integration -count=1 ./internal/store/
+
 # Linters and type checkers for every service
 lint:
     cd services/backend && test -z "$(gofmt -l .)" && go vet ./...
