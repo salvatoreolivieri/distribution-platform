@@ -25,8 +25,12 @@ services/
   task-worker/  Python, ports and adapters, Lambda + SnapStart
 infra/          Terraform: bootstrap, modules, envs/{dev,prod}
 tests/          e2e, api-conformance, load, shared-scenarios
-docs/           architecture, ADRs, milestones
+docs/           requirements, blueprint, architecture, ADRs, milestones
 ```
+
+Start with [docs/README.md](docs/README.md). [CLAUDE.md](CLAUDE.md) is the working guide for
+coding agents (and a good checklist for people): how to pick up a milestone item, and the checks
+before every commit.
 
 ## Getting started
 

@@ -33,6 +33,9 @@ seed:
 migrate:
     docker compose run --rm migrate --wait up
 
+# The gate before every commit: regenerate, lint, test
+check: gen lint test
+
 # Build the web app and every Lambda artifact into dist/
 build:
     cd web && npm run -s build
